@@ -14,6 +14,11 @@
 #   image_path = sys.argv[1]  # simple approach
 #   — or use argparse for something more polished
 
+import sys
+from analyzer import analyze_bridge
+from report import print_report
+
+
 if __name__ == "__main__":
-    # TODO: implement
-    pass
+    image_path = sys.argv[1]
+    print_report(analyze_bridge(image_path=image_path))

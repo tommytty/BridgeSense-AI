@@ -13,6 +13,19 @@
 # Tip: Keep it simple at first — just print() statements.
 # You can make it fancy with colors (colorama) or tables later.
 
+
 def print_report(result):
-    # TODO: implement
-    pass
+
+    print("Overall Score: ", result["overall_score"])
+    for r in result["principles"]:
+        print(r["name"])
+        print("Score: ", r["score"])
+        print("Reasoning: ",r["reasoning"])
+
+    print("Detected Features: ")
+    
+    for feature in result["detected_features"]:
+        print("-", feature)
+
+    print("Recommendation: ", result["recommendations"])
+

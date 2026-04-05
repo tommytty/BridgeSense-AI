@@ -1,30 +1,33 @@
 # analyzer.py — Core Image Analysis
-# ====================================
-# TODO: Write a function called `analyze_bridge` that:
-#   1. Takes an image file path as input
-#   2. Reads the image and base64-encodes it (use base64 module + open())
-#   3. Detects the image MIME type (jpeg, png, etc.)
-#   4. Calls the Anthropic API with the image + your prompt
-#   5. Parses the JSON from Claude's response
-#   6. Returns the parsed dict
-#
-# You'll need:
-#   import anthropic
-#   import base64
-#   import json
-#
-# The API call pattern:
-#   client = anthropic.Anthropic(api_key=your_key)
-#   message = client.messages.create(
-#       model=your_model,
-#       max_tokens=4096,
-#       messages=[{"role": "user", "content": [...]}]
-#   )
-#   response_text = message.content[0].text
-#
-# Don't forget error handling — what if the image doesn't exist?
-# What if Claude doesn't return valid JSON?
+import anthropic
+import base64
+import json
+import prompt_builder
+import mimetypes
+from config import API_KEY, MODEL
+from udp_principles import UDP_PRINCIPLES
+
 
 def analyze_bridge(image_path):
-    # TODO: implement
-    pass
+    with open(image_path, "rb") as f:
+        image_data = f.read()
+    
+    base64_string = base64.b64encode(image_data).decode("utf-8")
+    mime_type, _ = mimetypes.guess_type(image_path)
+    prompt = prompt_builder.build_prompt(UDP_PRINCIPLES)
+    client = anthropic.Anthropic(api_key=API_KEY)
+    message = client.messages.create(
+        model=MODEL,
+        max_tokens=4096,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": base64_string}},
+                {"type": "text", "text": prompt}
+            ]
+        }]
+    )
+    response_text = message.content[0].text
+    response_text = response_text.replace("```json", "").replace("```", "").strip() 
+    result = json.loads(response_text)
+    return result
