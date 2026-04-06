@@ -1,22 +1,20 @@
-# analyzer.py — Core Image Analysis
-import anthropic
+from prompt_builder import build_criteria
 import base64
-import json
-import prompt_builder
 import mimetypes
+import json
+import anthropic
 from config import API_KEY, MODEL
 from udp_principles import UDP_PRINCIPLES
-from bridge_profiler import bridge_profiler
 
-
-def analyze_bridge(image_path, principles):
+def bridge_profiler(image_path):
     with open(image_path, "rb") as f:
         image_data = f.read()
-    
+
     base64_string = base64.b64encode(image_data).decode("utf-8")
     mime_type, _ = mimetypes.guess_type(image_path)
-    prompt = prompt_builder.build_prompt(principles)
+    prompt = build_criteria(UDP_PRINCIPLES)
     client = anthropic.Anthropic(api_key=API_KEY)
+
     message = client.messages.create(
         model=MODEL,
         max_tokens=4096,
@@ -28,6 +26,7 @@ def analyze_bridge(image_path, principles):
             ]
         }]
     )
+
     response_text = message.content[0].text
     response_text = response_text.replace("```json", "").replace("```", "").strip() 
     result = json.loads(response_text)
