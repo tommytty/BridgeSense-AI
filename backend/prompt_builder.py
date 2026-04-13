@@ -73,6 +73,9 @@ def build_criteria(principles):
     "typical_users": "...",
     "context_summary": "...",
     "reasoning": "...",
+    "bridge_name" : "...",
+    "bridge_location" : "...",
+    "identification_confidence" : "..."
 }
     
     """
@@ -88,6 +91,8 @@ def build_criteria(principles):
                   NOT descriptions of what this specific bridge already has. The Evaluator will later check whether the bridge meets these standards, 
                   so the criteria must be able to reveal both strengths AND weaknesses.
 
+                  Please also note, if the bridge is assumed to mainly be built for vehicular traffic, it should not be rated for pedestrian uses. 
+                    and the same the other way around, if it is a pedestrian bridge and a bridge meant as a tourist attraction, make the criterias accordingly. 
                   Please also try and identify the name and location of the bridge in the picture and give a identification confidence level of 0-100%. 
 
             

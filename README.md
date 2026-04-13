@@ -1,113 +1,186 @@
-# BridgeSense AI — Core Analysis Engine
+# BridgeSense AI
 
-An AI-powered bridge accessibility evaluator using Claude's vision capabilities
-and the 7 Universal Design Principles.
+**An AI-powered bridge accessibility evaluator using multi-agent LLM chaining and the 7 Universal Design Principles.**
+
+Built by Tommy Tang as a personal project during the Diploma of Computer Systems Technology at BCIT.
+
+---
+
+## What It Does
+
+BridgeSense AI takes a photograph of a bridge and produces a structured accessibility audit against the 7 Universal Design Principles. It identifies the bridge, classifies it by type and typical users, generates context-aware evaluation criteria, scores the bridge against those criteria, and outputs actionable recommendations for improving accessibility.
+
+Unlike traditional accessibility audits, which require expert site visits and manual assessment, BridgeSense AI delivers a preliminary evaluation in under a minute from a single image.
+
+## Architecture
+
+The core technical contribution of this project is a **two-agent AI pipeline** rather than a single-shot prompt.
+
+```
+┌──────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────┐
+│  React UI    │────▶│  FastAPI Server  │────▶│ Profiler Agent   │────▶│ Evaluator    │
+│  (Vite)      │◀────│     (api.py)     │◀────│ (Claude Vision)  │────▶│ Agent        │
+└──────────────┘     └──────────────────┘     └──────────────────┘     └──────────────┘
+                                                      │                         │
+                                                      ▼                         ▼
+                                              Classifies bridge,      Scores bridge against
+                                              generates tailored      generated criteria,
+                                              evaluation criteria     outputs UDP report
+```
+
+**Agent 1 — The Profiler:** Classifies the bridge type (pedestrian, highway, railway, etc.), predicts typical users, gathers context, and generates aspirational accessibility criteria tailored to that specific bridge type. A highway bridge and a pedestrian hiking bridge get different yardsticks.
+
+**Agent 2 — The Evaluator:** Takes the image and the Profiler's tailored criteria, then scores the bridge against each of the 7 Universal Design Principles with reasoning and produces targeted improvement recommendations.
+
+### Why Two Agents Instead of One?
+
+The original design used a single API call with hardcoded criteria, but this produced context-blind evaluations — a highway bridge and a pedestrian walkway were judged by the same standards. Splitting the work across two agents with separate responsibilities produced significantly more context-aware and actionable output.
+
+A key design flaw surfaced during development: the Profiler initially generated criteria that *described* what the image already contained (e.g., "has multiple lanes"), effectively rigging the evaluation to pass. Fixing this required explicitly prompting the Profiler to generate **aspirational standards** — what an ideal accessible bridge of this type *should* have — rather than descriptions of what was visible. This is noted in the project as a reminder that multi-agent systems can fail in subtle, systemic ways.
+
+## Tech Stack
+
+**Backend**
+- Python 3.13
+- FastAPI for the HTTP API
+- Anthropic Python SDK (Claude Sonnet 4 for vision + reasoning)
+- Pillow for image handling and MIME detection
+- Uvicorn as the ASGI server
+
+**Frontend**
+- React 18 (Vite)
+- Vanilla CSS with design tokens (no UI framework)
+- Native Fetch API with FormData for file uploads
+- Custom engineering-themed dark UI with monospace data labels, grid background, and subtle animations
 
 ## Project Structure
 
 ```
-bridgesense-ai/
-├── README.md              ← You are here
-├── requirements.txt       ← Python dependencies
-├── config.py              ← API key + model settings (YOU BUILD)
-├── udp_principles.py      ← The 7 UDP definitions + scoring criteria (YOU BUILD)
-├── prompt_builder.py      ← Constructs the analysis prompt (YOU BUILD)
-├── analyzer.py            ← Sends image to Claude API, parses response (YOU BUILD)
-├── report.py              ← Formats the structured report output (YOU BUILD)
-├── main.py                ← CLI entry point — ties it all together (YOU BUILD)
-└── sample_images/         ← Drop test bridge images here
+BridgeSense AI/
+├── backend/
+│   ├── api.py                 # FastAPI entry point
+│   ├── bridge_profiler.py     # Agent 1 — image analysis & criteria generation
+│   ├── analyzer.py            # Agent 2 — UDP scoring
+│   ├── prompt_builder.py      # Prompt construction for both agents
+│   ├── udp_principles.py      # Base UDP principle templates
+│   ├── config.py              # Environment & model config
+│   ├── report.py              # Terminal report formatter (CLI mode)
+│   ├── main.py                # CLI entry point
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx            # Main React component (all state + views)
+│   │   ├── App.css            # Dark engineering-themed styling
+│   │   └── main.jsx
+│   ├── index.html
+│   └── package.json
+└── README.md
 ```
 
-## How to Build (Step by Step)
+## Getting Started
 
-### Step 1: Setup & Config (`config.py`)
-- Store your Anthropic API key (use environment variables, never hardcode!)
-- Set the model name: `claude-sonnet-4-20250514`
-- Tip: `os.environ.get("ANTHROPIC_API_KEY")` is your friend
+### Prerequisites
 
-### Step 2: Define the Principles (`udp_principles.py`)
-- Create a data structure (dict or list of dicts) holding all 7 UDP principles
-- Each principle needs: name, description, and what to look for on a bridge
-- Example structure:
-  ```python
-  UDP_PRINCIPLES = [
-      {
-          "id": 1,
-          "name": "Equitable Use",
-          "description": "The design is useful and marketable to people with diverse abilities.",
-          "bridge_criteria": [
-              # What would you look for? Think ramps, alternative routes, etc.
-          ]
-      },
-      # ... 6 more
-  ]
-  ```
+- Python 3.11+
+- Node.js 18+
+- An Anthropic API key
 
-### Step 3: Build the Prompt (`prompt_builder.py`)
-- Write a function that takes your UDP principles and returns a system prompt
-- The prompt should instruct Claude to:
-  - Analyze a bridge image for accessibility features
-  - Score each of the 7 principles from 1-5
-  - Detect specific features (ramps, surfaces, railings, signage, etc.)
-  - Return a structured JSON response
-- This is the MOST IMPORTANT file. The quality of your prompt = the quality of your analysis.
-- Tip: Ask Claude to respond in JSON format with a specific schema you define
-
-### Step 4: Core Analyzer (`analyzer.py`)
-- Write a function that:
-  1. Reads an image file and base64-encodes it
-  2. Calls the Anthropic API with your prompt + the image
-  3. Parses the JSON response
-  4. Returns a structured result dict
-- Use the `anthropic` Python SDK — it's cleaner than raw HTTP
-- Key API pattern:
-  ```python
-  message = client.messages.create(
-      model="claude-sonnet-4-20250514",
-      max_tokens=4096,
-      messages=[{
-          "role": "user",
-          "content": [
-              {"type": "image", "source": {"type": "base64", ...}},
-              {"type": "text", "text": your_prompt}
-          ]
-      }]
-  )
-  ```
-
-### Step 5: Report Formatter (`report.py`)
-- Takes the raw analysis dict and prints a readable report
-- Show: overall score, per-principle scores, detected features, recommendations
-- Start simple (print to terminal), get fancy later
-
-### Step 6: CLI Entry Point (`main.py`)
-- Accept an image path as a command-line argument
-- Wire together: load image → build prompt → analyze → format report
-- Use `argparse` or `sys.argv`
-
-## Quick Start (once you've built it)
+### Backend
 
 ```bash
-export ANTHROPIC_API_KEY="your-key-here"
-pip install -r requirements.txt
-python main.py sample_images/pedestrian_bridge.jpg
+cd backend
+python -m pip install -r requirements.txt
+
+# Set your API key (Windows PowerShell)
+$env:ANTHROPIC_API_KEY="sk-ant-..."
+
+# Run the API server
+python -m uvicorn api:app --reload
 ```
 
-## The 7 Universal Design Principles (Reference)
+The API will be available at `http://localhost:8000`. Visit `http://localhost:8000/docs` for interactive Swagger documentation.
 
-1. **Equitable Use** — Useful to people with diverse abilities
-2. **Flexibility in Use** — Accommodates a wide range of preferences
-3. **Simple and Intuitive Use** — Easy to understand regardless of experience
-4. **Perceptible Information** — Communicates info effectively to the user
-5. **Tolerance for Error** — Minimizes hazards and adverse consequences
-6. **Low Physical Effort** — Can be used efficiently and comfortably
-7. **Size and Space for Approach and Use** — Appropriate size and space for use
+### Frontend
 
-## Next Steps (after MVP works)
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-- [ ] Add a web interface (Flask or FastAPI)
-- [ ] Support multiple images per bridge
-- [ ] Generate PDF reports
-- [ ] Add before/after conceptual redesigns
-- [ ] Batch analysis mode
-"# BridgeSense-AI" 
+The frontend will be available at `http://localhost:5173`.
+
+### CLI Mode
+
+The backend also supports a command-line interface for direct terminal analysis:
+
+```bash
+cd backend
+python main.py path/to/bridge_image.jpg
+```
+
+## API Endpoints
+
+### `POST /analyze`
+
+Analyzes a bridge image. Accepts a multipart form with a `file` field.
+
+**Response (success):**
+```json
+{
+  "profile": {
+    "is_bridge": true,
+    "bridge_name": "Victoria Falls Bridge",
+    "bridge_location": "Zambezi River between Zambia and Zimbabwe",
+    "identification_confidence": "95%",
+    "bridge_type": "...",
+    "typical_users": "...",
+    "context_summary": "...",
+    "reasoning": "...",
+    "principles": [ /* 7 tailored principles with criteria */ ]
+  },
+  "analysis": {
+    "overall_score": 3.4,
+    "principles": [ /* 7 scored principles with reasoning */ ],
+    "detected_features": [ "..." ],
+    "recommendations": [ "..." ]
+  }
+}
+```
+
+**Response (not a bridge):** `400 Bad Request`
+```json
+{ "detail": "The uploaded image does not appear to be a bridge." }
+```
+
+## Key Design Decisions
+
+- **Image MIME detection via Pillow** rather than file extensions, because users upload mislabeled files (e.g., `.jpg` files that are actually WebP).
+- **Structured JSON schemas** in every prompt, with explicit "respond with JSON only" instructions and markdown fence stripping on the response side to handle Claude's occasional formatting.
+- **Decoupled analyzer** that accepts any `principles` parameter rather than importing a hardcoded list — this enables swapping criteria sources (Profiler output vs. hardcoded) and future experimentation.
+- **Graceful non-bridge rejection** through a profiler-level `is_bridge` flag, short-circuiting the pipeline before running the more expensive evaluator.
+- **CORS + ephemeral temp files** on the backend so uploaded images are cleaned up even when exceptions occur.
+
+## Known Limitations
+
+- **Bridge identification is best-effort.** Claude's vision can identify major landmarks but may hallucinate names for lesser-known bridges. Confidence scores help communicate this uncertainty.
+- **Single-angle analysis.** Each evaluation is based on one image. A real audit would need multiple angles and supplementary data (lighting conditions, surface material specs, etc.).
+- **No persistence.** Results are not saved between sessions. Adding a simple database for a history feature is a natural next step.
+- **API costs scale with usage.** Each analysis makes two API calls. Budget accordingly for production deployment.
+
+## Future Work
+
+- Progressive loading messages (Profiling → Analyzing) with real backend status, not timers
+- EXIF metadata extraction to improve bridge identification accuracy
+- PDF report export
+- Batch analysis mode
+- A judging agent that validates Profiler criteria before handing them to the Evaluator (reflection pattern)
+- Support for multiple images per bridge
+
+## License
+
+Personal project — not licensed for commercial use.
+
+## Acknowledgements
+
+Built with Claude (Anthropic) as both the AI backend and a pair-programming collaborator during development.
