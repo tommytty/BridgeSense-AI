@@ -3,6 +3,7 @@ import base64
 import mimetypes
 import json
 import anthropic
+from PIL import Image
 from config import API_KEY, MODEL
 from udp_principles import UDP_PRINCIPLES
 
@@ -11,7 +12,8 @@ def bridge_profiler(image_path):
         image_data = f.read()
 
     base64_string = base64.b64encode(image_data).decode("utf-8")
-    mime_type, _ = mimetypes.guess_type(image_path)
+    with Image.open(image_path) as img:
+        mime_type = f"image/{img.format.lower()}"
     prompt = build_criteria(UDP_PRINCIPLES)
     client = anthropic.Anthropic(api_key=API_KEY)
 

@@ -35,7 +35,14 @@ def build_prompt(principles):
 
 def build_criteria(principles):
 
-    prompt = """You are an expert at bridge analysis. When you are sent pictures of bridges,
+    prompt = """
+                Before anything, you will check if the picture is a bridge or not. IF the picture is not a bridge, please
+                disregard the rest of the prompt and just return in this exact JSON format:
+                {"is_bridge" : false, "message" : "The uploaded image does not appear to be a bridge."} 
+
+                If the picture is a bridge, please continue with the prompt! 
+
+                You are an expert at bridge analysis. When you are sent pictures of bridges,
                 you analyze the picture and identify what type of bridge it is, what it is used for, 
                 the typical users of such bridge, the context of why this bridge was built, why it was built,
                 and how it was built, what the goal of the bridge was. the history, the very essence of the reasoning behind
@@ -51,7 +58,8 @@ def build_criteria(principles):
 
     prompt += """ Now that the 7 UDP principle have been given to you, you must return them with the criteria you have come up with in this exact JSON format
     
-          {
+    {
+    "is_bridge": true,
     "principles": [
         {"id": 1, "name": "...", "description": "...", "bridge_criteria": ["...", "..."]},
         {"id": 2, "name": "...", "description": "...", "bridge_criteria": ["...", "..."]},
@@ -64,7 +72,7 @@ def build_criteria(principles):
     "bridge_type": "...",
     "typical_users": "...",
     "context_summary": "...",
-    "reasoning": "..."
+    "reasoning": "...",
 }
     
     """
@@ -79,6 +87,8 @@ def build_criteria(principles):
                   These criteria should be aspirational standards — what SHOULD be present for maximum accessibility — 
                   NOT descriptions of what this specific bridge already has. The Evaluator will later check whether the bridge meets these standards, 
                   so the criteria must be able to reveal both strengths AND weaknesses.
+
+                  Please also try and identify the name and location of the bridge in the picture and give a identification confidence level of 0-100%. 
 
             
                   Respond with JSON only. Do not include any other text
