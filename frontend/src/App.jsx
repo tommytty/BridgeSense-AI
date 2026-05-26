@@ -114,7 +114,7 @@ function App() {
               <div className="score-label">OVERALL UDP SCORE</div>
               <div className="score-value">
                 {result.analysis.overall_score}
-                <span className="score-max">/5</span>
+                <span className="score-max">/ 5</span>
               </div>
             </div>
           </div>
