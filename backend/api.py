@@ -41,5 +41,10 @@ async def analyze_endpoint(file: UploadFile = File(...)):
         if e.status_code == 529:
             raise HTTPException(status_code=503, detail="AI service is temporarily overloaded. Please try again.")
         raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
+    except Exception as e:
+        # Catch-all so unhandled errors (e.g. malformed/truncated JSON from the model)
+        # still go through FastAPI's exception handling and get CORS headers attached,
+        # instead of surfacing to the browser as an opaque NetworkError.
+        raise HTTPException(status_code=500, detail=f"Unexpected server error: {str(e)}")
     finally:
         os.remove(temp_path)

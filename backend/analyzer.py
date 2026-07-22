@@ -21,7 +21,7 @@ def analyze_bridge(image_path, principles):
     client = anthropic.Anthropic(api_key=API_KEY)
     message = client.messages.create(
         model=MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{
             "role": "user",
             "content": [
@@ -30,7 +30,7 @@ def analyze_bridge(image_path, principles):
             ]
         }]
     )
-    response_text = message.content[0].text
+    response_text = next(block.text for block in message.content if block.type == "text")
     response_text = response_text.replace("```json", "").replace("```", "").strip() 
     result = json.loads(response_text)
     return result
