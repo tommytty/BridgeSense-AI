@@ -1,20 +1,24 @@
 # BridgeSense AI
 
-**An AI-powered bridge accessibility evaluator using multi-agent LLM chaining and the 7 Universal Design Principles.**
+> **[→ Try the live demo](https://bridge-sense-ai.vercel.app)** — upload a bridge photo, get an accessibility audit in under a minute.
 
-Built by Tommy Tang as a personal project during the Diploma of Computer Systems Technology at BCIT.
+A multi-agent LLM system that evaluates bridge accessibility against the 7 Universal Design Principles. Built with Claude as both the AI backend and a pair-programming collaborator.
+
+> **Heads up:** The backend runs on a free Render instance that spins down after inactivity. Your first request might take 30–60 seconds while the server wakes up. Subsequent requests are fast.
 
 ---
 
-## What It Does
+## The Pitch
 
-BridgeSense AI takes a photograph of a bridge and produces a structured accessibility audit against the 7 Universal Design Principles. It identifies the bridge, classifies it by type and typical users, generates context-aware evaluation criteria, scores the bridge against those criteria, and outputs actionable recommendations for improving accessibility.
+Most accessibility audits require trained inspectors, site visits, and weeks of turnaround. BridgeSense AI takes a single photograph and produces a structured evaluation — identification, classification, per-principle scoring, and concrete improvement recommendations — in well under a minute.
 
-Unlike traditional accessibility audits, which require expert site visits and manual assessment, BridgeSense AI delivers a preliminary evaluation in under a minute from a single image.
+It's not a replacement for expert review. It's a screening tool that flags issues, prioritizes sites, and surfaces design considerations that might otherwise go unnoticed.
+
+The bridges themselves aren't really the point of the project. The point is the **system design** — a working pattern for multi-agent LLM evaluation that could be pointed at almost any subject (public transit stations, playgrounds, storefronts, anything where Universal Design matters).
 
 ## Architecture
 
-The core technical contribution of this project is a **two-agent AI pipeline** rather than a single-shot prompt.
+Two specialized Claude agents chained together, each with a focused responsibility:
 
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────┐
@@ -28,104 +32,84 @@ The core technical contribution of this project is a **two-agent AI pipeline** r
                                               evaluation criteria     outputs UDP report
 ```
 
-**Agent 1 — The Profiler:** Classifies the bridge type (pedestrian, highway, railway, etc.), predicts typical users, gathers context, and generates aspirational accessibility criteria tailored to that specific bridge type. A highway bridge and a pedestrian hiking bridge get different yardsticks.
+**Profiler Agent.** Classifies the bridge type, predicts typical users, gathers context, and generates *aspirational* accessibility criteria tailored to that specific type. A highway bridge and a hiking footbridge get different yardsticks.
 
-**Agent 2 — The Evaluator:** Takes the image and the Profiler's tailored criteria, then scores the bridge against each of the 7 Universal Design Principles with reasoning and produces targeted improvement recommendations.
+**Evaluator Agent.** Receives the image plus the Profiler's tailored criteria. Scores against each of the 7 Universal Design Principles, surfaces detected features, and produces targeted improvement recommendations.
 
-### Why Two Agents Instead of One?
+The two agents are **decoupled by design**. The Evaluator accepts any `principles` parameter — it doesn't import a hardcoded list. This means criteria sources can be swapped, profilers can be A/B tested, and the orchestration logic stays clean.
 
-The original design used a single API call with hardcoded criteria, but this produced context-blind evaluations — a highway bridge and a pedestrian walkway were judged by the same standards. Splitting the work across two agents with separate responsibilities produced significantly more context-aware and actionable output.
+## Why Two Agents Instead of One?
 
-A key design flaw surfaced during development: the Profiler initially generated criteria that *described* what the image already contained (e.g., "has multiple lanes"), effectively rigging the evaluation to pass. Fixing this required explicitly prompting the Profiler to generate **aspirational standards** — what an ideal accessible bridge of this type *should* have — rather than descriptions of what was visible. This is noted in the project as a reminder that multi-agent systems can fail in subtle, systemic ways.
+The first version used a single API call with hardcoded criteria. It produced context-blind evaluations — a highway bridge and a pedestrian walkway were judged by the same standards, and the output read like a generic accessibility checklist.
+
+Splitting the work into specialized agents produced significantly more context-aware output. The Profiler can spend its prompt budget thinking about bridge type and user demographics without polluting the scoring step. The Evaluator can focus on rigorous judgment without re-deriving context. Each agent has a smaller, cleaner job.
+
+The **decoupled architecture** also makes evaluation possible. Comparing single-agent vs. multi-agent outputs on the same image is a one-line change in `main.py`. That kind of substitutability matters when you start caring about output quality empirically rather than vibes.
+
+## The Bug That Almost Wasn't a Bug
+
+The most interesting thing I learned building this had nothing to do with multi-agent orchestration. It was a subtle failure mode that *looked* like the system was working perfectly.
+
+The original Profiler was generating criteria like *"has multiple vehicle lanes"* or *"has a cable-stayed structure"* — things it was literally seeing in the image it was looking at. The Evaluator would then score against those criteria, see the same features, and give the bridge full marks.
+
+**Both agents were looking at the same image. The Profiler was inadvertently rigging the exam.**
+
+The bridge always passed because the criteria were descriptions of what was already there. The system produced thorough-looking JSON reports that were quietly useless. From the outside everything looked fine — the issue only surfaced when I started running the same bridges and noticing scores were suspiciously high regardless of obvious accessibility gaps.
+
+The fix was in the Profiler's prompt. I added explicit language requiring **aspirational standards** — what an ideal accessible bridge of this type *should* have — and forbidding descriptions of what the specific bridge contained. Now the criteria can reveal real strengths and weaknesses. The bridge can actually fail.
+
+This is the kind of failure mode you don't see coming with single-agent systems, because there's no boundary between "context gathering" and "evaluation" — they're the same prompt. Multi-agent systems make these dependencies *visible*, but they don't fix them automatically. You still have to design for the right behaviors.
+
+I think about this bug a lot. It's the strongest argument I have that evaluation frameworks aren't optional for production LLM systems — they're how you catch the system being confidently wrong.
+
+## Why Claude?
+
+I built this with Claude Sonnet 4 (Anthropic) rather than GPT-4o or Gemini. A few specific reasons, in priority order:
+
+1. **Structured JSON output is more reliable.** Both agents communicate via JSON schemas, and GPT-4o has a stronger tendency to wrap its output in markdown fences or add prose preambles. Claude follows "respond with JSON only" instructions more consistently. For agent-to-agent communication, parse reliability matters more than raw capability.
+
+2. **Vision quality is comparable, but reasoning quality is noticeably better for this task.** When asked to generate criteria, Claude's outputs are more specific and measurable ("minimum 8 feet pedestrian walkway width") rather than generic ("wide enough for everyone"). That difference compounds across both agents.
+
+3. **The API is straightforward.** Image base64 + text message in a single content block is clean and well-documented. No model-specific quirks around tool calling or function schemas getting in the way of a simple vision request.
+
+4. **Honest reasons:** I have good API access through Anthropic, and Claude has been my main pair-programming tool throughout BCIT. I know its failure modes well enough to design around them.
+
+The whole pipeline is model-agnostic by design. Swapping in a different vision model would be a config change, not a refactor. But if I were building this for production today, I'd stay with Claude for the inter-agent communication layer specifically.
 
 ## Tech Stack
 
-**Backend**
-- Python 3.13
-- FastAPI for the HTTP API
-- Anthropic Python SDK (Claude Sonnet 4 for vision + reasoning)
-- Pillow for image handling and MIME detection
-- Uvicorn as the ASGI server
+**Backend** — Python 3.13, FastAPI, Anthropic Python SDK, Pillow (image handling + real MIME detection from bytes, not file extensions), Uvicorn, deployed on Render.
 
-**Frontend**
-- React 18 (Vite)
-- Vanilla CSS with design tokens (no UI framework)
-- Native Fetch API with FormData for file uploads
-- Custom engineering-themed dark UI with monospace data labels, grid background, and subtle animations
+**Frontend** — React 18 + Vite, vanilla CSS with design tokens, native Fetch API with FormData uploads. No UI framework — wanted full control over the dark engineering aesthetic. Deployed on Vercel.
 
-## Project Structure
+**Inter-service** — CORS-protected REST API with environment-based URL resolution. The frontend reads `VITE_API_URL` from environment variables, so the same codebase works against local and deployed backends.
 
-```
-BridgeSense AI/
-├── backend/
-│   ├── api.py                 # FastAPI entry point
-│   ├── bridge_profiler.py     # Agent 1 — image analysis & criteria generation
-│   ├── analyzer.py            # Agent 2 — UDP scoring
-│   ├── prompt_builder.py      # Prompt construction for both agents
-│   ├── udp_principles.py      # Base UDP principle templates
-│   ├── config.py              # Environment & model config
-│   ├── report.py              # Terminal report formatter (CLI mode)
-│   ├── main.py                # CLI entry point
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx            # Main React component (all state + views)
-│   │   ├── App.css            # Dark engineering-themed styling
-│   │   └── main.jsx
-│   ├── index.html
-│   └── package.json
-└── README.md
-```
+The whole thing lives in about 400 lines of Python and 300 lines of JSX.
 
-## Getting Started
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- An Anthropic API key
-
-### Backend
+## Running It Locally
 
 ```bash
+# Backend
 cd backend
 python -m pip install -r requirements.txt
-
-# Set your API key (Windows PowerShell)
-$env:ANTHROPIC_API_KEY="sk-ant-..."
-
-# Run the API server
+$env:ANTHROPIC_API_KEY="sk-ant-..."   # PowerShell
 python -m uvicorn api:app --reload
-```
 
-The API will be available at `http://localhost:8000`. Visit `http://localhost:8000/docs` for interactive Swagger documentation.
-
-### Frontend
-
-```bash
+# Frontend (separate terminal)
 cd frontend
 npm install
+echo "VITE_API_URL=http://localhost:8000" > .env
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173`.
+Visit `http://localhost:5173`.
 
-### CLI Mode
-
-The backend also supports a command-line interface for direct terminal analysis:
-
-```bash
-cd backend
-python main.py path/to/bridge_image.jpg
-```
-
-## API Endpoints
+## API Endpoint
 
 ### `POST /analyze`
 
-Analyzes a bridge image. Accepts a multipart form with a `file` field.
+Multipart form with a `file` field containing the bridge image.
 
-**Response (success):**
 ```json
 {
   "profile": {
@@ -148,39 +132,32 @@ Analyzes a bridge image. Accepts a multipart form with a `file` field.
 }
 ```
 
-**Response (not a bridge):** `400 Bad Request`
-```json
-{ "detail": "The uploaded image does not appear to be a bridge." }
-```
+Non-bridge images return a `400` with a friendly message instead of running the more expensive evaluator.
 
-## Key Design Decisions
+## Engineering Notes
 
-- **Image MIME detection via Pillow** rather than file extensions, because users upload mislabeled files (e.g., `.jpg` files that are actually WebP).
-- **Structured JSON schemas** in every prompt, with explicit "respond with JSON only" instructions and markdown fence stripping on the response side to handle Claude's occasional formatting.
-- **Decoupled analyzer** that accepts any `principles` parameter rather than importing a hardcoded list — this enables swapping criteria sources (Profiler output vs. hardcoded) and future experimentation.
-- **Graceful non-bridge rejection** through a profiler-level `is_bridge` flag, short-circuiting the pipeline before running the more expensive evaluator.
-- **CORS + ephemeral temp files** on the backend so uploaded images are cleaned up even when exceptions occur.
+A few decisions worth calling out:
 
-## Known Limitations
+- **MIME detection from bytes, not extensions.** Pillow opens the image and reports its actual format. Users upload mislabeled files (`.jpg` files that are secretly WebP); trusting extensions caused real production errors during testing.
+- **Profiler-level rejection of non-bridge images.** The `is_bridge` flag short-circuits the pipeline before the more expensive evaluator runs. Saves cost and produces a better error UX.
+- **Ephemeral temp files with `try/finally` cleanup.** Uploaded images are deleted even when exceptions occur partway through processing. Important for a long-running service.
+- **No state between requests.** Each analysis is independent. Made the deployment story trivial — no database, no session management, no migrations.
+- **Graceful handling of upstream API errors.** Anthropic's `OverloadedError` (529) and other API failures get translated to user-friendly `503` and `500` responses with messages, not stack traces.
 
-- **Bridge identification is best-effort.** Claude's vision can identify major landmarks but may hallucinate names for lesser-known bridges. Confidence scores help communicate this uncertainty.
-- **Single-angle analysis.** Each evaluation is based on one image. A real audit would need multiple angles and supplementary data (lighting conditions, surface material specs, etc.).
-- **No persistence.** Results are not saved between sessions. Adding a simple database for a history feature is a natural next step.
-- **API costs scale with usage.** Each analysis makes two API calls. Budget accordingly for production deployment.
+## What I'd Build Next
 
-## Future Work
+If I kept working on this:
 
-- Progressive loading messages (Profiling → Analyzing) with real backend status, not timers
-- EXIF metadata extraction to improve bridge identification accuracy
-- PDF report export
-- Batch analysis mode
-- A judging agent that validates Profiler criteria before handing them to the Evaluator (reflection pattern)
-- Support for multiple images per bridge
+- **A judge agent.** A third Claude call that validates the Profiler's criteria *before* they reach the Evaluator. If the judge finds criteria that are descriptive rather than aspirational, it sends them back for revision. This is the reflection pattern, and it's the natural extension of the bug story above.
+- **A proper eval suite.** Right now I evaluate the pipeline by uploading bridges and reading the output. Production would need a corpus of bridges with known accessibility scores and automated regression testing.
+- **EXIF geolocation.** Phone-taken photos include GPS coordinates. Feeding those into the Profiler would dramatically improve bridge identification accuracy for non-landmark bridges.
 
-## License
+## Built With Claude
 
-Personal project — not licensed for commercial use.
+I used Claude as my pair-programming partner throughout this project. The architecture decisions and the code are mine — every line went through my understanding — but Claude was the rubber duck I argued with about design choices, the syntax reference I checked CSS specificity questions against, and the tutor I asked when I needed to learn React's `useState` model from scratch.
 
-## Acknowledgements
+My favorite part of working with it is exactly what's in the bug story above. Claude is useful enough that you can ship things you don't fully understand, but it's also a mirror — it gives you back what you give it. The Profiler self-grading bug existed because *my prompt* was sloppy, not because Claude failed. Once I learned to think more carefully about what I was asking for, the system got dramatically better. That feedback loop is how I'd rather work for the rest of my career.
 
-Built with Claude (Anthropic) as both the AI backend and a pair-programming collaborator during development.
+---
+
+**Built by Tommy Tang — Diploma of Computer Systems Technology, BCIT (2026)**
